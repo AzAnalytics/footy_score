@@ -4,8 +4,8 @@
 from __future__ import annotations
 import streamlit as st
 from sqlalchemy import select, func, case, or_
-from app.core.db import get_session, init_db
-from app.core.models import Base, Match, PlayerStat
+from core.db import get_session, init_db
+from core.models import Base, Match, PlayerStat
 
 st.set_page_config(page_title="Stats saison", page_icon="📊")
 st.title("📊 Stats saison")

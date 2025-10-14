@@ -4,11 +4,11 @@
 from __future__ import annotations
 import streamlit as st
 from datetime import date
-from app.core.db import init_db
-from app.core.models import Base, Match, Quarter, PlayerStat
-from app.core.repos.players_repo import list_players, upsert_players
-from app.services.match_service import save_post_match
-from app.ui.inputs import score_inputs, players_stat_table
+from core.db import init_db
+from core.models import Base, Match, Quarter, PlayerStat
+from core.repos.players_repo import list_players, upsert_players
+from services.match_service import save_post_match
+from ui.inputs import score_inputs, players_stat_table
 
 st.set_page_config(page_title="Saisie post-match", page_icon="📝")
 st.title("📝 Saisie post-match")

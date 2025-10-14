@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import streamlit as st
-from app.core.db import init_db
-from app.core.models import Base
-from app.core.repos.matches_repo import list_matches, get_match
+from core.db import init_db
+from core.models import Base
+from core.repos.matches_repo import list_matches, get_match
 
 st.set_page_config(page_title="Historique", page_icon="📚")
 st.title("📚 Historique des matchs")

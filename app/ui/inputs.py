@@ -4,7 +4,7 @@
 from __future__ import annotations
 import streamlit as st
 from typing import Dict, List
-from app.core.models import calc_points
+from core.models import calc_points
 
 def score_inputs(label: str) -> Dict[str, int]:
     c1, c2, c3 = st.columns(3)

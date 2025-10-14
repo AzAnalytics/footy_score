@@ -3,8 +3,8 @@
 from __future__ import annotations
 from typing import Sequence
 
-from app.core.models import Match, Quarter, PlayerStat, calc_points
-from app.core.repos.matches_repo import insert_match
+from core.models import Match, Quarter, PlayerStat, calc_points
+from core.repos.matches_repo import insert_match
 
 def validate_quarters(quarters: Sequence[Quarter]) -> list[str]:
     errs = []

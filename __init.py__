@@ -1,0 +1,19 @@
+python - <<'PY'
+from pathlib import Path
+for p in [
+    "app",
+    "app/core",
+    "app/core/repos",
+    "app/services",
+    "app/ui",
+    "app/pages",
+]:
+    d = Path(p)
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "__init__.py"
+    if not f.exists():
+        f.write_text("# package\n", encoding="utf-8")
+        print("créé:", f)
+    else:
+        print("ok   :", f)
+PY

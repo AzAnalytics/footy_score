@@ -7,6 +7,8 @@ from types import SimpleNamespace as _NS
 from core.db import init_db
 from core.models import Base
 from core.repos.matches_repo import list_matches, get_match
+from services.auth_service import require_login, current_user
+from core.repos.matches_repo import list_matches_for_team, get_match
 
 # UI tables
 from ui.tables import (
@@ -21,8 +23,19 @@ st.title("📚 Historique des matchs")
 
 init_db(Base)
 
+user = require_login()
+team = (user.get("team_name") or "").strip()
+
+if team:
+    rows = list_matches_for_team(team, 100)
+    st.caption(f"Filtrage par équipe : **{team}**")
+    match_objs = [_NS(**m) for m in rows]
+    matches_table(match_objs, title="📜 Récapitulatif des matchs", show_download=True)
+else:
+    rows = list_matches(100)
+    st.caption("Aucune équipe affectée à ce compte — affichage global.")
 # Récupère les N derniers matchs (liste de dicts)
-rows = list_matches(100)
+st.markdown("---")
 
 if not rows:
     st.info("Aucun match enregistré.")
@@ -31,7 +44,7 @@ else:
     match_objs = [_NS(**m) for m in rows]
     matches_table(match_objs, title="📜 Récapitulatif des matchs", show_download=True)
 
-    st.markdown("---")
+    
 
     # ---- Détail par match (expanders) ----
     for m in rows:

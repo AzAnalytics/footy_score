@@ -23,6 +23,9 @@ from core.scoring import (
 # UI
 from ui.inputs import score_inputs, players_stat_table
 
+from services.auth_service import require_login
+user = require_login()
+
 st.set_page_config(page_title="Saisie post-match", page_icon="📝")
 st.title("📝 Saisie post-match")
 

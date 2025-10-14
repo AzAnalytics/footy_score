@@ -6,6 +6,9 @@ from typing import List, Dict, Optional
 from datetime import date
 from sqlalchemy import select, func, and_, delete
 from sqlalchemy.orm import selectinload
+from sqlalchemy import select, or_
+from core.db import get_session
+from core.models import Match, Quarter, PlayerStat
 
 
 from ..db import get_session
@@ -288,3 +291,43 @@ def delete_all_matches() -> int:
         result = s.execute(delete(Match))
         # SQLAlchemy 2 retourne rowcount ou None selon backend
         return int(result.rowcount or 0)
+
+# --- AJOUT ---
+
+
+def list_matches_for_team(team_name: str, limit: int = 100):
+    """
+    Retourne les derniers matchs où l'équipe apparaît en home_club ou away_club.
+    """
+    team = (team_name or "").strip()
+    if not team:
+        return []  # ou fallback list_matches(limit)
+
+    with get_session() as s:
+        q = (
+            select(Match)
+            .where(or_(Match.home_club == team, Match.away_club == team))
+            .order_by(Match.date.desc(), Match.id.desc())
+            .limit(limit)
+        )
+        rows = s.scalars(q).all()
+
+        # Serialisation dict minimal, cohérente avec ton list_matches() actuel
+        out = []
+        for m in rows:
+            out.append({
+                "id": m.id,
+                "date": m.date,
+                "season_id": m.season_id,
+                "home_club": m.home_club,
+                "away_club": m.away_club,
+                "venue": m.venue,
+                "total_home_points": m.total_home_points,
+                "total_away_points": m.total_away_points,
+                # optionnels si présents dans le modèle
+                "total_home_goals": getattr(m, "total_home_goals", None),
+                "total_home_behinds": getattr(m, "total_home_behinds", None),
+                "total_away_goals": getattr(m, "total_away_goals", None),
+                "total_away_behinds": getattr(m, "total_away_behinds", None),
+            })
+        return out

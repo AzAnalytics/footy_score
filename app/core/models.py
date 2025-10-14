@@ -6,9 +6,11 @@ from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Column, Integer, String, Date, DateTime, ForeignKey, UniqueConstraint
+    Column, Integer, String, Date, DateTime, ForeignKey, UniqueConstraint,Boolean
 )
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql import func
+
 
 Base = declarative_base()
 
@@ -66,3 +68,13 @@ class PlayerStat(Base):
 # Helpers métier
 def calc_points(goals: int, behinds: int) -> int:
     return 6 * goals + behinds
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    email = Column(String(190), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    team_name = Column(String(120), nullable=True)  # ex: "Toulouse" ou "Lyon"
+    is_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

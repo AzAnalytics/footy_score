@@ -1,4 +1,4 @@
-from pathlib import Path
+"""from pathlib import Path
 
 # 📁 Point de départ : ton dossier actuel (footy_score)
 base = Path.cwd()
@@ -33,4 +33,4 @@ for rel_path, content in structure.items():
     else:
         print(f"⏭️  Déjà présent : {file_path.relative_to(base)}")
 
-print("\nArborescence de base initialisée avec succès 🎉")
+print("\nArborescence de base initialisée avec succès 🎉")"""

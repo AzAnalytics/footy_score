@@ -2,8 +2,9 @@
 # app/core/validators.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dc_field
 from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Tuple
+from collections import Counter
 
 from core.scoring import points_of, sum_quarters_match
 
@@ -28,8 +29,8 @@ WARN_IF_SEASON_MISMATCH_WITH_DATE = True
 EXPECT_4_QUARTERS = True
 EXPECTED_QUART_NUMBERS: Sequence[int] = (1, 2, 3, 4)
 
-# Nom de l’équipe "locale" pour comparer stats joueurs vs score déclaré
-DEFAULT_TEAM_NAME = "Toulouse"
+# Pas de nom d’équipe par défaut ici — l’UI doit préciser
+# soit le côté ("home"/"away"), soit le team_name concerné.
 
 
 # =========================
@@ -41,13 +42,13 @@ class ValidationIssue:
     code: str
     message: str
     severity: Severity = "error"
-    field: Optional[str] = None
-    context: Dict[str, Any] = field(default_factory=dict)
+    field_name: Optional[str] = None
+    context: Dict[str, Any] = dc_field(default_factory=dict)
 
     def __str__(self) -> str:
         prefix = "⚠️" if self.severity == "warning" else "❌"
-        if self.field:
-            return f"{prefix} [{self.code}] {self.field}: {self.message}"
+        if self.field_name:
+            return f"{prefix} [{self.code}] {self.field_name}: {self.message}"
         return f"{prefix} [{self.code}] {self.message}"
 
 
@@ -69,6 +70,27 @@ def _safe_int(x: Any, default: int = 0) -> int:
         return int(x)
     except Exception:
         return default
+
+def _declared_points(match: Any, *, team_side: Optional[Literal["home", "away"]] = None, team_name: Optional[str] = None) -> Optional[int]:
+    """
+    Renvoie le score déclaré pour un côté précis ou pour un nom d'équipe.
+    - Si team_side est fourni: on l'utilise.
+    - Sinon si team_name est fourni: on détecte s'il est home ou away.
+    - Sinon: None (pas de comparaison possible).
+    """
+    if team_side in {"home", "away"}:
+        attr = "total_home_points" if team_side == "home" else "total_away_points"
+        return _safe_int(getattr(match, attr, None), 0)
+
+    if _non_empty_str(team_name):
+        try:
+            if getattr(match, "home_club", None) == team_name:
+                return _safe_int(getattr(match, "total_home_points", None), 0)
+            if getattr(match, "away_club", None) == team_name:
+                return _safe_int(getattr(match, "total_away_points", None), 0)
+        except Exception:
+            return None
+    return None
 
 
 # =========================
@@ -129,7 +151,6 @@ def validate_date_and_season(match: Any) -> List[ValidationIssue]:
                 sev: Severity = "error" if DISALLOW_FUTURE_DATES else "warning"
                 issues.append(ValidationIssue("match.date.future", f"La date ({d}) est dans le futur.", sev, "date"))
     except Exception:
-        # Pas critique : on ignore si le type ne permet pas la comparaison
         pass
 
     # Saison vs date (année)
@@ -146,7 +167,6 @@ def validate_date_and_season(match: Any) -> List[ValidationIssue]:
                     {"season": y, "date_year": dy},
                 ))
         except Exception:
-            # Si saison pas numérique, déjà signalé dans structure
             pass
 
     return issues
@@ -227,15 +247,17 @@ def validate_quarter_sequence(quarters: Iterable[Any]) -> List[ValidationIssue]:
         return issues
 
     numbers = [getattr(q, "q", None) for q in qs]
+
     # Doublons
-    dups = {n for n in numbers if n is not None and numbers.count(n) > 1}
-    for d in sorted(dups):
-        issues.append(ValidationIssue("quarters.duplicate_number", f"Numéro de quart dupliqué: Q{d}.", "warning", "q", {"duplicate": d}))
+    counts = Counter([n for n in numbers if isinstance(n, int)])
+    for n, c in counts.items():
+        if c > 1:
+            issues.append(ValidationIssue("quarters.duplicate_number", f"Numéro de quart dupliqué: Q{n}.", "warning", "q", {"duplicate": n}))
 
     # Manquants / inattendus
     if EXPECT_4_QUARTERS:
         expected = set(EXPECTED_QUART_NUMBERS)
-        got = {n for n in numbers if isinstance(n, int)}
+        got = set(counts.keys())
         missing = sorted(expected - got)
         unexpected = sorted(got - expected)
         if missing:
@@ -299,23 +321,22 @@ def validate_player_rows(player_stats: Iterable[Any]) -> List[ValidationIssue]:
 def validate_duplicate_players(player_stats: Iterable[Any]) -> List[ValidationIssue]:
     """Avertit en cas de doublons de noms (insensibles à la casse/espaces)."""
     issues: List[ValidationIssue] = []
-    seen: Dict[str, int] = {}
-    for i, ps in enumerate(player_stats or [], start=1):
+    keys: List[str] = []
+    for ps in (player_stats or []):
         name = getattr(ps, "player_name", None) if hasattr(ps, "player_name") else (ps.get("player_name") if isinstance(ps, dict) else None)
         key = (name or "").strip().lower()
-        if not key:
-            continue
-        seen[key] = seen.get(key, 0) + 1
-    dups = [n for (n, c) in seen.items() if c > 1]
-    if dups:
-        issues.append(ValidationIssue("players.duplicates", f"Noms de joueurs en doublon: {', '.join(sorted(dups))}.", "warning", "player_name"))
+        if key:
+            keys.append(key)
+    dup_names = [n for n, c in Counter(keys).items() if c > 1]
+    if dup_names:
+        issues.append(ValidationIssue("players.duplicates", f"Noms de joueurs en doublon: {', '.join(sorted(dup_names))}.", "warning", "player_name"))
     return issues
 
 
-def validate_players_vs_declared(match: Any, team_name: str = DEFAULT_TEAM_NAME) -> List[ValidationIssue]:
+def validate_players_vs_declared(match: Any, *, team_side: Optional[Literal["home", "away"]] = None, team_name: Optional[str] = None) -> List[ValidationIssue]:
     """
-    Compare somme(points joueurs de team_name) au score déclaré de team_name.
-    On ne force pas le mapping club->équipe : on part du principe que l’UI sait "qui est Toulouse".
+    Compare la somme des points joueurs au score déclaré (home/away).
+    Spécifiez soit team_side ('home'/'away'), soit team_name.
     """
     issues: List[ValidationIssue] = []
     pstats = list(getattr(match, "player_stats", []) or [])
@@ -326,22 +347,25 @@ def validate_players_vs_declared(match: Any, team_name: str = DEFAULT_TEAM_NAME)
     for ps in pstats:
         total_players += _safe_int(getattr(ps, "points", None) if hasattr(ps, "points") else (ps.get("points") if isinstance(ps, dict) else 0), 0)
 
-    declared = None
-    try:
-        if getattr(match, "home_club", None) == team_name:
-            declared = _safe_int(getattr(match, "total_home_points", None), 0)
-        elif getattr(match, "away_club", None) == team_name:
-            declared = _safe_int(getattr(match, "total_away_points", None), 0)
-    except Exception:
-        declared = None
+    declared = _declared_points(match, team_side=team_side, team_name=team_name)
+    if declared is None:
+        # Pas assez de contexte pour comparer : warning informatif
+        issues.append(ValidationIssue(
+            "players.sum_vs_declared.skipped",
+            "Comparaison joueurs vs score déclaré ignorée (team_side/team_name non fourni).",
+            "warning",
+            "player_stats",
+        ))
+        return issues
 
-    if declared is not None and total_players != declared:
+    label = team_side if team_side in {"home", "away"} else (team_name or "?")
+    if total_players != declared:
         issues.append(ValidationIssue(
             "players.sum_vs_declared",
-            f"Somme points joueurs {team_name} ({total_players}) ≠ score déclaré ({declared}).",
+            f"Somme points joueurs ({total_players}) ≠ score déclaré ({declared}) côté {label}.",
             "error",
             "player_stats",
-            {"team": team_name, "sum_players": total_players, "declared": declared},
+            {"label": label, "sum_players": total_players, "declared": declared},
         ))
 
     return issues
@@ -351,10 +375,16 @@ def validate_players_vs_declared(match: Any, team_name: str = DEFAULT_TEAM_NAME)
 # Agrégateur principal
 # =========================
 
-def validate_match(match: Any, team_name: str = DEFAULT_TEAM_NAME) -> Tuple[bool, List[ValidationIssue], List[ValidationIssue]]:
+def validate_match(
+    match: Any,
+    *,
+    team_side: Optional[Literal["home", "away"]] = None,
+    team_name: Optional[str] = None,
+) -> Tuple[bool, List[ValidationIssue], List[ValidationIssue]]:
     """
     Valide un objet Match complet.
     Retourne: (ok, errors, warnings)
+    - Fournissez team_side OU team_name pour comparer les points joueurs au score déclaré.
     """
     errors: List[ValidationIssue] = []
     warnings: List[ValidationIssue] = []
@@ -388,7 +418,7 @@ def validate_match(match: Any, team_name: str = DEFAULT_TEAM_NAME) -> Tuple[bool
         issues = validate_duplicate_players(pstats)
         _split_issues(issues, errors, warnings)
 
-        issues = validate_players_vs_declared(match, team_name=team_name)
+        issues = validate_players_vs_declared(match, team_side=team_side, team_name=team_name)
         _split_issues(issues, errors, warnings)
 
     ok = len(errors) == 0

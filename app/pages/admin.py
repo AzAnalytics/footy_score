@@ -25,6 +25,10 @@ st.title("🛠️ Administration")
 init_db(Base)
 admin = require_admin()  # stop() si non-admin
 
+if admin["email"] != "az.analytics.pro@gmail.com":
+    st.error("Accès réservé au super administrateur.")
+    st.stop()
+
 st.caption(f"Connecté en tant que **{admin['email']}** — rôle **Admin**")
 
 st.divider()

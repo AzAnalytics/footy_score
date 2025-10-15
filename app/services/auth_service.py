@@ -4,17 +4,15 @@ from __future__ import annotations
 from typing import Optional, Callable
 import streamlit as st
 
-from core.repos.users_repo import get_user_by_email, verify_password
+from core.repos.users_repo import get_user_by_email, verify_password, verify_password_by_email
 
 SESSION_KEY = "auth_user"  # dict: {"email":..., "team_name":..., "is_admin":...}
 
 def login(email: str, password: str) -> bool:
-    u = get_user_by_email(email.strip().lower())
-    if not u:
+    ok, user_public = verify_password_by_email(email, password)
+    if not ok:
         return False
-    if not verify_password(u, password):
-        return False
-    st.session_state[SESSION_KEY] = {"email": u.email, "team_name": u.team_name, "is_admin": bool(u.is_admin), "id": u.id}
+    st.session_state[SESSION_KEY] = user_public  # dict prêt à l’emploi
     return True
 
 def logout() -> None:

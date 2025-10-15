@@ -7,6 +7,9 @@ from sqlalchemy import select, func, case, or_
 from core.db import get_session, init_db
 from core.models import Base, Match, PlayerStat
 
+from services.auth_service import require_login
+user = require_login()
+
 st.set_page_config(page_title="Stats saison", page_icon="📊")
 st.title("📊 Stats saison")
 

@@ -9,9 +9,10 @@ from services.auth_service import login, logout, current_user
 from core.repos.users_repo import create_user
 
 from ui.nav import sidebar_menu
-u = sidebar_menu()
 
 st.set_page_config(page_title="Connexion", page_icon="🔐")
+u = sidebar_menu()
+
 st.title("🔐 Connexion")
 
 # ---------------------------
@@ -30,7 +31,7 @@ def _norm_email(email: str) -> str:
     return (email or "").strip().lower()
 
 def _cooldown_active() -> bool:
-    # anti-bruteforce minimal côté UI
+    # anti-bruteforce minimal côté UI (en complément de auth_service)
     now = time.time()
     last_fail = st.session_state.get("last_login_fail_ts", 0.0)
     fails = int(st.session_state.get("login_fail_count", 0))
@@ -54,11 +55,13 @@ csrf = _ensure_csrf()
 # ---------------------------
 # Connexion / Déconnexion
 # ---------------------------
-u = current_user()
-if u:
-    st.success(f"Connecté en tant que {u['email']} (équipe : {u.get('team_name') or '—'})")
+user = current_user()
+if user:
+    st.success(f"Connecté en tant que {user['email']} (équipe : {user.get('team_name') or '—'})")
     if st.button("Se déconnecter"):
         logout()
+        # (optionnel) on régénère le token après logout
+        st.session_state.pop("csrf_token", None)
         st.rerun()
 else:
     st.subheader("Se connecter")
@@ -69,12 +72,12 @@ else:
     with st.form("login", clear_on_submit=False):
         email = st.text_input("Email", disabled=disabled)
         pwd = st.text_input("Mot de passe", type="password", disabled=disabled)
-        # CSRF caché
-        st.text_input("CSRF", value=csrf, type="password", key="csrf_login", label_visibility="collapsed")
+        # ❌ Supprimé: aucun champ "CSRF" rendu à l'écran
         ok = st.form_submit_button("Se connecter", disabled=disabled)
 
     if ok and not disabled:
-        if not _check_csrf(st.session_state.get("csrf_login")):
+        # ✅ Vérifie le token directement depuis la session (sans champ utilisateur)
+        if not _check_csrf(st.session_state.get("csrf_token")):
             st.error("CSRF invalide.")
         else:
             email_n = _norm_email(email)
@@ -83,6 +86,9 @@ else:
             else:
                 if login(email_n, pwd):
                     _reset_fail()
+                    # (optionnel) rotation du token à la connexion
+                    st.session_state.pop("csrf_token", None)
+                    _ensure_csrf()
                     st.success("Connexion réussie ✅")
                     st.rerun()
                 else:
@@ -91,25 +97,38 @@ else:
 
 st.divider()
 
-# ---------------------------
-# Création de compte (optionnelle)
-# ---------------------------
-ALLOW_SELF_SIGNUP = (os.getenv("ALLOW_SELF_SIGNUP", "false").strip().lower() in {"1", "true", "yes"})
 
-with st.expander("Créer un utilisateur"):
+# ---------------------------
+# Création de compte (active par défaut)
+# ---------------------------
+# Priorité : st.secrets > env ; défaut = True
+_allow_secret = st.secrets.get("ALLOW_SELF_SIGNUP", None)
+ALLOW_SELF_SIGNUP = (
+    (_allow_secret if isinstance(_allow_secret, bool) else None)
+)
+if ALLOW_SELF_SIGNUP is None:
+    # fallback env (string) puis défaut True
+    ALLOW_SELF_SIGNUP = (os.getenv("ALLOW_SELF_SIGNUP", "true").strip().lower() in {"1", "true", "yes"})
+
+with st.expander("🆕 Créer un utilisateur"):
     if not ALLOW_SELF_SIGNUP:
-        st.info("La création de compte est désactivée (ALLOW_SELF_SIGNUP=false). Activez-la côté serveur pour le setup initial.", icon="🔒")
+        st.info(
+            "La création de compte est désactivée (ALLOW_SELF_SIGNUP=false). "
+            "Activez-la côté serveur si nécessaire.",
+            icon="🔒",
+        )
     else:
-        st.caption("À désactiver une fois l'application configurée (voir variable d'environnement ALLOW_SELF_SIGNUP).")
+        st.caption("Crée ton compte ci-dessous. (Le rôle **Admin** n’est attribué que si ton email correspond à `admin_email` côté serveur.)")
         with st.form("create_user"):
             email2 = st.text_input("Email (nouveau)")
             pwd2 = st.text_input("Mot de passe (nouveau)", type="password")
             team2 = st.text_input("Équipe (ex : Toulouse, Lyon)", placeholder="Toulouse")
-            # CSRF caché
-            st.text_input("CSRF", value=csrf, type="password", key="csrf_create", label_visibility="collapsed")
-            ok2 = st.form_submit_button("Créer")
+            ok2 = st.form_submit_button("Créer mon compte")
+
         if ok2:
-            if not _check_csrf(st.session_state.get("csrf_create")):
+            # On récupère le token directement depuis la session (plus besoin de champ)
+            token_ok = _check_csrf(st.session_state.get("csrf_token"))
+            if not token_ok:
                 st.error("CSRF invalide.")
             else:
                 email2_n = _norm_email(email2)
@@ -119,10 +138,10 @@ with st.expander("Créer un utilisateur"):
                     st.error("Le mot de passe doit contenir au moins 8 caractères.")
                 else:
                     try:
-                        # ⚙️ Le backend attribue le rôle admin uniquement si l'email = ADMIN_EMAIL
-                        caller = u or {}  # si quelqu'un est connecté (admin), on transmet
-                        uid = create_user(email2_n, pwd2, (team2.strip() or None), caller_ctx=caller)
+                        uid = create_user(email2_n, pwd2, (team2.strip() or None))
                         st.success(f"Utilisateur créé avec succès (id={uid}) ✅")
-                        st.info("Vous pouvez maintenant vous connecter avec ce compte.")
+                        st.info("Tu peux maintenant te connecter avec ce compte.")
                     except Exception as e:
                         st.error(str(e))
+# ------------------------------
+

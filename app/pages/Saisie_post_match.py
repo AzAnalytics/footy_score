@@ -146,7 +146,6 @@ if caller["team_name"]:
         team_side = "away"
 
 # -------- 4) Validations centralisées ----------
-st.subheader("4) Validation")
 ok, errors, warnings = validate_match(tmp_match, team_side=team_side)
 for w in warnings:
     st.warning(str(w))
@@ -156,7 +155,6 @@ st.caption(summarize_result(ok, errors, warnings))
 
 # -------- 5) Enregistrement ----------
 # CSRF caché pour le submit
-st.text_input("CSRF", value=csrf, type="password", key="csrf_save", label_visibility="collapsed")
 save_btn = st.button("💾 Enregistrer le match", type="primary", disabled=not ok)
 
 if save_btn:

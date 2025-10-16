@@ -57,7 +57,6 @@ with st.form("form_team"):
         placeholder="Ex: Toulouse, Lyon…"
     )
     # CSRF caché
-    st.text_input("CSRF", value=csrf, type="password", key="csrf_team", label_visibility="collapsed")
     ok_team = st.form_submit_button("Mettre à jour l’équipe")
 
 if ok_team:
@@ -84,7 +83,6 @@ with st.form("form_pwd"):
     new_pwd = st.text_input("Nouveau mot de passe", type="password")
     new_pwd2 = st.text_input("Confirmer le nouveau mot de passe", type="password")
     # CSRF caché
-    st.text_input("CSRF", value=csrf, type="password", key="csrf_pwd", label_visibility="collapsed")
     ok_pwd = st.form_submit_button("Mettre à jour le mot de passe")
 
 if ok_pwd:

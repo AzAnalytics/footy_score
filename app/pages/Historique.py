@@ -35,14 +35,16 @@ def _auth_ctx() -> dict:
         "is_admin": bool(u.get("is_admin")),
     }
 
+# --- CSRF helpers (invisibles) ---
 def _ensure_csrf():
     if "csrf_token" not in st.session_state:
         import secrets
         st.session_state["csrf_token"] = secrets.token_urlsafe(24)
     return st.session_state["csrf_token"]
 
-def _check_csrf(tok: str | None) -> bool:
-    return bool(tok and tok == st.session_state.get("csrf_token"))
+def _check_csrf() -> bool:
+    # on vérifie juste la présence du token de session (pas d'input rendu)
+    return bool(st.session_state.get("csrf_token"))
 
 user = require_login()
 caller = _auth_ctx()
@@ -243,7 +245,6 @@ for m in rows:
             )
         with col_right:
             # CSRF pour la sauvegarde
-            st.text_input("CSRF", value=csrf, type="password", key=f"csrf-ps-{m['id']}", label_visibility="collapsed")
             save_ps = st.button("💾 Enregistrer les stats joueurs", key=f"ps-save-{m['id']}")
 
         if save_ps:

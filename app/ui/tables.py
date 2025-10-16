@@ -1,8 +1,7 @@
 # Tables/metrics réutilisables
-# app/ui/table.py
+# app/ui/tables.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from encodings.idna import ace_prefix
 from typing import Iterable, List, Dict, Any, Optional
 from datetime import date
 
@@ -10,19 +9,31 @@ import pandas as pd
 import streamlit as st
 
 from core.scoring import (
-    winner,
-    margin,
     scoreline_home_away,
     sum_quarters_match,
-    format_scoreline,
 )
 
 # ------------------------------
-# Utils d'affichage génériques
+# Utils d'accès/format
 # ------------------------------
 
+def _get(obj: Any, name: str, default: Any = None) -> Any:
+    if hasattr(obj, name):
+        return getattr(obj, name)
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return default
+
+def _to_date_str(x: Any) -> Any:
+    try:
+        return pd.to_datetime(x).date().isoformat()
+    except Exception:
+        return x
+
 def _download_row(df: pd.DataFrame, filename_prefix: str, key_prefix: str = "dl") -> None:
-    """Affiche une rangée de 2 boutons de téléchargement (CSV/JSON)."""
+    """Affiche deux boutons de téléchargement (CSV/JSON) avec encodages propres."""
+    if df is None or df.empty:
+        return
     csv = df.to_csv(index=False).encode("utf-8")
     jsonb = df.to_json(orient="records").encode("utf-8")
     c1, c2 = st.columns(2)
@@ -31,14 +42,14 @@ def _download_row(df: pd.DataFrame, filename_prefix: str, key_prefix: str = "dl"
         data=csv,
         file_name=f"{filename_prefix}.csv",
         mime="text/csv",
-        key=f"{key_prefix}-csv",            # ✅ clé unique
+        key=f"{key_prefix}-csv",
     )
     c2.download_button(
         "⬇️ Télécharger JSON",
         data=jsonb,
         file_name=f"{filename_prefix}.json",
         mime="application/json",
-        key=f"{key_prefix}-json",           # ✅ clé unique
+        key=f"{key_prefix}-json",
     )
 
 def show_dataframe(
@@ -47,9 +58,6 @@ def show_dataframe(
     use_container_width: bool = True,
     key: Optional[str] = None,
 ) -> None:
-    """
-    Wrapper Streamlit pour afficher un DataFrame avec quelques réglages commonsense.
-    """
     if caption:
         st.caption(caption)
     st.dataframe(df, use_container_width=use_container_width, hide_index=True, key=key)
@@ -59,25 +67,40 @@ def show_dataframe(
 # Tableaux de matches
 # ------------------------------
 
-def matches_table(rows, title: str = None, show_download: bool = False, key_prefix: str = "matches"):
-    df = pd.DataFrame([{
-        "ID": getattr(m, "id", None) if hasattr(m, "id") else m.get("id"),
-        "Date": getattr(m, "date", None) if hasattr(m, "date") else m.get("date"),
-        "Saison": getattr(m, "season_id", None) if hasattr(m, "season_id") else m.get("season_id"),
-        "Domicile": getattr(m, "home_club", None) if hasattr(m, "home_club") else m.get("home_club"),
-        "Extérieur": getattr(m, "away_club", None) if hasattr(m, "away_club") else m.get("away_club"),
-        "Pts Dom": getattr(m, "total_home_points", None) if hasattr(m, "total_home_points") else m.get("total_home_points"),
-        "Pts Ext": getattr(m, "total_away_points", None) if hasattr(m, "total_away_points") else m.get("total_away_points"),
-        "Lieu": getattr(m, "venue", None) if hasattr(m, "venue") else m.get("venue"),
-    } for m in rows or []])
+def matches_table(
+    rows: Iterable[Any],
+    title: Optional[str] = None,
+    show_download: bool = False,
+    key_prefix: str = "matches",
+) -> pd.DataFrame:
+    data: List[Dict[str, Any]] = []
+    for m in rows or []:
+        data.append({
+            "ID": _get(m, "id"),
+            "Date": _to_date_str(_get(m, "date")),
+            "Saison": _get(m, "season_id"),
+            "Domicile": _get(m, "home_club"),
+            "Extérieur": _get(m, "away_club"),
+            "Pts Dom": _get(m, "total_home_points"),
+            "Pts Ext": _get(m, "total_away_points"),
+            "Lieu": _get(m, "venue"),
+        })
+    df = pd.DataFrame(data)
+    # tri du plus récent si possible
+    if not df.empty and "Date" in df.columns:
+        try:
+            df = df.sort_values("Date", ascending=False, key=lambda s: pd.to_datetime(s, errors="coerce"))
+        except Exception:
+            pass
 
     if title:
         st.subheader(title)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    show_dataframe(df)
 
     if show_download and not df.empty:
         _download_row(df, filename_prefix="matches", key_prefix=f"{key_prefix}-matches")
 
+    return df
 
 
 # ------------------------------
@@ -92,26 +115,23 @@ def quarters_table(
     show_download: bool = True,
     key_prefix: str = "quarters",
 ) -> pd.DataFrame:
-    """
-    Affiche un tableau des quarts : Q, HG, HB, HP, AG, AB, AP + ligne Total.
-    """
     rows: List[Dict[str, Any]] = []
     for q in quarters or []:
         rows.append({
-            "Q": getattr(q, "q", None),
-            f"{home_label} G": getattr(q, "home_goals", None),
-            f"{home_label} B": getattr(q, "home_behinds", None),
-            f"{home_label} P": getattr(q, "home_points", None),
-            f"{away_label} G": getattr(q, "away_goals", None),
-            f"{away_label} B": getattr(q, "away_behinds", None),
-            f"{away_label} P": getattr(q, "away_points", None),
+            "Q": _get(q, "q"),
+            f"{home_label} G": _get(q, "home_goals", 0),
+            f"{home_label} B": _get(q, "home_behinds", 0),
+            f"{home_label} P": _get(q, "home_points", 0),
+            f"{away_label} G": _get(q, "away_goals", 0),
+            f"{away_label} B": _get(q, "away_behinds", 0),
+            f"{away_label} P": _get(q, "away_points", 0),
         })
 
     df = pd.DataFrame(rows)
 
-    # Ligne total si possible
+    # Ligne total si calcul possible
     try:
-        sums = sum_quarters_match(quarters or [])
+        sums = sum_quarters_match(list(quarters or []))
         hg, hb, hp = sums["home"]
         ag, ab, ap = sums["away"]
         total_row = {
@@ -143,22 +163,18 @@ def quarters_table(
 
 def players_stats_table_view(
     pstats: Iterable[Any],
-    team_label: str = "Toulouse",
+    team_label: str = "Mon équipe",
     show_total: bool = True,
     show_download: bool = False,
     key_prefix: str = "players",
 ) -> pd.DataFrame:
-    """
-    Affiche le tableau des stats joueurs : Joueur, Buts, Behinds, Points.
-    Optionnellement ajoute une ligne Total et des boutons de téléchargement.
-    """
     rows: List[Dict[str, Any]] = []
     for ps in pstats or []:
         rows.append({
-            "Joueur": getattr(ps, "player_name", None) if hasattr(ps, "player_name") else ps.get("player_name"),
-            "Buts":   getattr(ps, "goals", None)       if hasattr(ps, "goals")       else ps.get("goals"),
-            "Behinds":getattr(ps, "behinds", None)     if hasattr(ps, "behinds")     else ps.get("behinds"),
-            "Points": getattr(ps, "points", None)      if hasattr(ps, "points")      else ps.get("points"),
+            "Joueur": _get(ps, "player_name"),
+            "Buts":   int(_get(ps, "goals", 0) or 0),
+            "Behinds":int(_get(ps, "behinds", 0) or 0),
+            "Points": int(_get(ps, "points", 0) or 0),
         })
 
     df = pd.DataFrame(rows)
@@ -172,7 +188,7 @@ def players_stats_table_view(
         }
         df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    show_dataframe(df)
 
     if show_download and not df.empty:
         _download_row(df, filename_prefix="players", key_prefix=f"{key_prefix}-players")
@@ -181,30 +197,40 @@ def players_stats_table_view(
 
 
 # ------------------------------
-# Aides d'affichage compacts
+# En-tête compact de match
 # ------------------------------
 
 def match_header(match: Any, show_scoreline: bool = True) -> None:
     """
-    Affiche un petit en-tête résumant le match (Date – Home vs Away – score).
+    Affiche un en-tête résumant le match (Date – Home vs Away – score).
     """
-    d = getattr(match, "date", None)
-    saison = getattr(match, "season_id", None)
-    home = getattr(match, "home_club", "Home")
-    away = getattr(match, "away_club", "Away")
-    venue = getattr(match, "venue", None)
+    d = _get(match, "date")
+    saison = _get(match, "season_id")
+    home = _get(match, "home_club", "Home")
+    away = _get(match, "away_club", "Away")
+    venue = _get(match, "venue")
 
     left = f"**{home}** vs **{away}**"
-    right = ""
+
     if show_scoreline:
         try:
             sh, sa = scoreline_home_away(match)
             right = f"{sh} – {sa}"
         except Exception:
-            right = f"({getattr(match, 'total_home_points', '?')}) – ({getattr(match, 'total_away_points', '?')})"
+            right = f"({_get(match, 'total_home_points', '?')}) – ({_get(match, 'total_away_points', '?')})"
+    else:
+        right = ""
 
-    meta = " · ".join([str(d) if isinstance(d, (date, str)) and d else "", f"Saison {saison}" if saison else "", venue or ""]).strip(" ·")
+    meta_parts = []
+    if isinstance(d, (date, str)) and d:
+        meta_parts.append(str(d))
+    if saison:
+        meta_parts.append(f"Saison {saison}")
+    if venue:
+        meta_parts.append(str(venue))
+    meta = " · ".join(meta_parts)
+
     if meta:
         st.caption(meta)
     st.markdown(f"{left} &nbsp;&nbsp; {right}")
-# ---------- FIN ----------
+# ------------------------------
